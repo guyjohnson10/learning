@@ -40,7 +40,7 @@ app.post('/business', async (req, res) => {
     const prompt = `Act as an expert web developer and copywriter. Generate the complete HTML code for a professional, single-page website for a ${business_type} named ${business_name}. The contact phone number is ${phone_number}. Use professional, royalty-free stock photos from unsplash.com as placeholders. The entire response must be ONLY the raw HTML code, starting with <!DOCTYPE html>.`;
 
     const geminiResponse = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
 
       {
         contents: [{ parts: [{ text: prompt }] }],
