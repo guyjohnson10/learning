@@ -14,21 +14,9 @@ app.use(express.json());
 
 // Redis setup
 const redis = createClient({ url: process.env.REDIS_URL });
+redis.connect().catch(console.error);
 
-redis.on('error', (err) => {
-  console.error('Redis connection error:', err);
-});
-
-redis.connect().then(() => {
-  console.log('✅ Redis connected.');
-}).catch(console.error);
-
-// Health check route to stop Railway from crashing
-app.get('/', (req, res) => {
-  res.send('✅ Server is running.');
-});
-
-// Business site generation route
+// Route
 app.post('/business', async (req, res) => {
   const { business_name, business_type, phone_number } = req.body;
 
@@ -36,14 +24,14 @@ app.post('/business', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  // Create unique cache key
+  // Unique cache key
   const cacheKey = `site:${crypto
     .createHash('sha256')
     .update(`${business_name}-${business_type}-${phone_number}`)
     .digest('hex')}`;
 
   try {
-    // Check Redis cache first
+    // Check cache
     const cached = await redis.get(cacheKey);
     if (cached) {
       console.log('✅ Cache hit');
@@ -51,12 +39,12 @@ app.post('/business', async (req, res) => {
       return res.send(cached);
     }
 
-    // Build Gemini prompt
+    // Prompt for Gemini
     const prompt = `Act as an expert web developer and copywriter. Generate the complete HTML code for a professional, single-page website for a ${business_type} named ${business_name}. The contact phone number is ${phone_number}. Use professional, royalty-free stock photos from unsplash.com as placeholders. The entire response must be ONLY the raw HTML code, starting with <!DOCTYPE html>.`;
 
-    // Call Gemini
+    // Gemini API call
     const geminiResponse = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-002:generateContent',
       {
         contents: [{ parts: [{ text: prompt }] }],
       },
@@ -68,20 +56,22 @@ app.post('/business', async (req, res) => {
       }
     );
 
-    const html = geminiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    // Extract response safely
+    const content = geminiResponse.data?.candidates?.[0]?.content;
+    const html = content?.parts?.[0]?.text || content?.text;
 
-    if (!html || !html.startsWith('<!DOCTYPE html>')) {
-      console.error('❌ Unexpected Gemini response:', geminiResponse.data);
+    if (!html || !html.includes('<!DOCTYPE html>')) {
+      console.error('❌ Unexpected Gemini response:', JSON.stringify(geminiResponse.data, null, 2));
       return res.status(500).json({ error: 'Unexpected response from Gemini' });
     }
 
-    // Cache result
+    // Save to Redis
     await redis.set(cacheKey, html);
 
     res.set('Content-Type', 'text/html');
     res.send(html);
   } catch (err) {
-    console.error('❌ Gemini API Error:', err?.response?.data || err.message);
+    console.error('Gemini API Error:', err?.response?.data || err.message);
     res.status(500).json({ error: 'Failed to generate content' });
   }
 });
