@@ -28,7 +28,7 @@ app.post('/business', async (req, res) => {
 
   try {
     const response = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent',
       {
         contents: [{ parts: [{ text: prompt }] }]
       },
