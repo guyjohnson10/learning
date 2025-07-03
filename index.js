@@ -5,7 +5,6 @@ const cors = require('cors');
 const { createClient } = require('redis');
 const crypto = require('crypto');
 const Stripe = require('stripe');
-const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,10 +14,39 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const redis = createClient({ url: process.env.REDIS_URL });
 redis.connect().catch(console.error);
 
-// Middleware
+// Use express.raw only for Stripe webhook route
+app.post(
+  '/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res) => {
+    const sig = req.headers['stripe-signature'];
+
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } catch (err) {
+      console.error('⚠️ Webhook signature verification failed.', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const redisKey = session.metadata?.redis_key;
+
+      if (!redisKey) {
+        console.error('❌ No redis_key found in metadata');
+      } else {
+        console.log(`✅ PAYMENT SUCCESS: Site [${redisKey}] is ready to be published.`);
+      }
+    }
+
+    res.json({ received: true });
+  }
+);
+
+// Use JSON body parser for everything else
 app.use(cors());
 app.use(express.json());
-app.use(bodyParser.raw({ type: 'application/json' })); // Needed for Stripe webhooks
 
 // Website generation endpoint
 app.post('/business', async (req, res) => {
@@ -72,32 +100,6 @@ app.post('/business', async (req, res) => {
     console.error('Gemini API Error:', err?.response?.data || err.message);
     res.status(500).json({ error: 'Failed to generate content' });
   }
-});
-
-// Stripe webhook
-app.post('/webhook', async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    console.error('⚠️ Webhook signature verification failed.', err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const redisKey = session.metadata?.redis_key;
-
-    if (!redisKey) {
-      console.error('❌ No redis_key found in metadata');
-    } else {
-      console.log(`✅ PAYMENT SUCCESS: Site [${redisKey}] is ready to be published.`);
-    }
-  }
-
-  res.json({ received: true });
 });
 
 // Start server
