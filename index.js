@@ -14,7 +14,43 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const redis = createClient({ url: process.env.REDIS_URL });
 redis.connect().catch(console.error);
 
-// Use express.raw only for Stripe webhook route
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Stripe checkout session creation
+app.post('/create-checkout-session', async (req, res) => {
+  const { redis_key } = req.body;
+
+  if (!redis_key) {
+    return res.status(400).json({ error: 'Missing redis_key' });
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: process.env.STRIPE_PRICE_ID, // Ensure this is set in your .env file
+          quantity: 1,
+        },
+      ],
+      success_url: 'https://your-app-domain.lovable.app/success',
+      cancel_url: 'https://your-app-domain.lovable.app/cancel',
+      metadata: {
+        redis_key,
+      },
+    });
+
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('❌ Stripe session creation failed:', error.message);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// Stripe webhook (must come before express.json middleware for raw body parsing)
 app.post(
   '/webhook',
   express.raw({ type: 'application/json' }),
@@ -43,10 +79,6 @@ app.post(
     res.json({ received: true });
   }
 );
-
-// Use JSON body parser for everything else
-app.use(cors());
-app.use(express.json());
 
 // Website generation endpoint
 app.post('/business', async (req, res) => {
