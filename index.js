@@ -1,4 +1,20 @@
 require('dotenv').config();
+
+const requiredEnv = [
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'STRIPE_PRICE_ID',
+  'REDIS_URL',
+  'GEMINI_API_KEY',
+];
+
+const missingEnv = requiredEnv.filter((name) => !process.env[name]);
+if (missingEnv.length) {
+  console.error(
+    `Missing required environment variables: ${missingEnv.join(', ')}`
+  );
+  process.exit(1);
+}
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
